@@ -7,8 +7,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["chat application"],
+  "author": "Thanh Truong",
   "license": "ISC",
   "dependencies": {
     "express": "^4.19.2",
