@@ -3,12 +3,12 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Server } from "socket.io";
-import sqlite3 from 'sqlite3';
+import sqlite3 from "sqlite3";
 import { open } from "sqlite";
 
 const db = await open({
-  filename: 'chat.db',
-  driver: sqlite3.Database
+  filename: "chat.db",
+  driver: sqlite3.Database,
 });
 
 await db.exec(`
@@ -22,7 +22,7 @@ await db.exec(`
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
-  connectionStateRecovery: {}
+  connectionStateRecovery: {},
 });
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -33,12 +33,17 @@ app.get("/", (req, res) => {
 io.on("connection", async (socket) => {
   // console.log("connected");
 
-  socket.on("chat message", async (msg) => {
+  socket.on("chat message", async (msg, clientOffset, callback) => {
     let result;
     try {
-      result = await db.run('INSERT INTO messages (content) VALUES (?)', msg);
-
-    } catch(e) {
+      result = await db.run("INSERT INTO messages (content, client_offset) VALUES (?, ?)", msg, clientOffset);
+    } catch (e) {
+      //
+      if (e.errno === 19) {
+        callback();
+      } else {
+        
+      }
       return;
     }
     io.emit("chat message", msg, result.lastID);
@@ -46,15 +51,14 @@ io.on("connection", async (socket) => {
 
   if (!socket.recovered) {
     try {
-      await db.each('SELECT id, content FROM messages WHERE id > ?',
-      [socket.handshake.auth.serverOffset || 0],
-      (_err, row) => {
-        socket.emit('chat message', row.content, row.id);
-      }
-    )
-    } catch (e) {
-      
-    }
+      await db.each(
+        "SELECT id, content FROM messages WHERE id > ?",
+        [socket.handshake.auth.serverOffset || 0],
+        (_err, row) => {
+          socket.emit("chat message", row.content, row.id);
+        }
+      );
+    } catch (e) {}
   }
 });
 
