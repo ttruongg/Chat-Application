@@ -47,6 +47,7 @@ io.on("connection", async (socket) => {
       return;
     }
     io.emit("chat message", msg, result.lastID);
+    callback();
   });
 
   if (!socket.recovered) {

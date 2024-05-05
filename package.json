@@ -13,6 +13,7 @@
   "author": "Thanh Truong",
   "license": "ISC",
   "dependencies": {
+    "@socket.io/cluster-adapter": "^0.2.2",
     "express": "^4.19.2",
     "socket.io": "^4.7.5",
     "sqlite": "^5.1.1",
