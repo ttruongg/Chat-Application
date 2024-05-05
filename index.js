@@ -5,64 +5,86 @@ import { dirname, join } from "node:path";
 import { Server } from "socket.io";
 import sqlite3 from "sqlite3";
 import { open } from "sqlite";
+import {  } from "node:os";
+import cluster from "node:cluster";
+import { createAdapter, setupPrimary } from "@socket.io/cluster-adapter";
 
-const db = await open({
-  filename: "chat.db",
-  driver: sqlite3.Database,
-});
+if (cluster.isPrimary) {
+  const numCPUs = availableParallelism();
 
-await db.exec(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id INTERGER PRIMARY KEY AUTOINCREMENT,
-    client_offset TEXT UNIQUE,
-    content TEXT
-  );
-`);
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork({
+      PORT: 3000 + i,
+    });
+  }
 
-const app = express();
-const server = createServer(app);
-const io = new Server(server, {
-  connectionStateRecovery: {},
-});
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-app.get("/", (req, res) => {
-  res.sendFile(join(__dirname, "index.html"));
-});
-
-io.on("connection", async (socket) => {
-  // console.log("connected");
-
-  socket.on("chat message", async (msg, clientOffset, callback) => {
-    let result;
-    try {
-      result = await db.run("INSERT INTO messages (content, client_offset) VALUES (?, ?)", msg, clientOffset);
-    } catch (e) {
-      //
-      if (e.errno === 19) {
-        callback();
-      } else {
-        
-      }
-      return;
-    }
-    io.emit("chat message", msg, result.lastID);
-    callback();
+  setupPrimary();
+} else {
+  const db = await open({
+    filename: "chat.db",
+    driver: sqlite3.Database,
   });
 
-  if (!socket.recovered) {
-    try {
-      await db.each(
-        "SELECT id, content FROM messages WHERE id > ?",
-        [socket.handshake.auth.serverOffset || 0],
-        (_err, row) => {
-          socket.emit("chat message", row.content, row.id);
-        }
-      );
-    } catch (e) {}
-  }
-});
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTERGER PRIMARY KEY AUTOINCREMENT,
+      client_offset TEXT UNIQUE,
+      content TEXT
+    );
+  `);
 
-server.listen(3000, () => {
-  console.log("server is running");
-});
+  const app = express();
+  const server = createServer(app);
+  const io = new Server(server, {
+    connectionStateRecovery: {},
+
+    adapter: createAdapter(),
+  });
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+
+  app.get("/", (req, res) => {
+    res.sendFile(join(__dirname, "index.html"));
+  });
+
+  io.on("connection", async (socket) => {
+    // console.log("connected");
+
+    socket.on("chat message", async (msg, clientOffset, callback) => {
+      let result;
+      try {
+        result = await db.run(
+          "INSERT INTO messages (content, client_offset) VALUES (?, ?)",
+          msg,
+          clientOffset
+        );
+      } catch (e) {
+        //
+        if (e.errno === 19) {
+          callback();
+        } else {
+        }
+        return;
+      }
+      io.emit("chat message", msg, result.lastID);
+      callback();
+    });
+
+    if (!socket.recovered) {
+      try {
+        await db.each(
+          "SELECT id, content FROM messages WHERE id > ?",
+          [socket.handshake.auth.serverOffset || 0],
+          (_err, row) => {
+            socket.emit("chat message", row.content, row.id);
+          }
+        );
+      } catch (e) {}
+    }
+  });
+
+  const port = process.env.PORT;
+
+  server.listen(port, () => {
+    console.log("server is running at " + port);
+  });
+}
